@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日计划记录工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+
+        body {
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .add-task, .export-tasks {
+            padding: 10px 20px;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .add-task {
+            background-color: #4CAF50;
+        }
+
+        .export-tasks {
+            background-color: #2196F3;
+        }
+
+        .total-time {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .day-group {
+            margin-bottom: 30px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .day-header {
+            background-color: #f8f9fa;
+            padding: 15px;
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .day-total-time {
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .task-list {
+            background-color: white;
+        }
+
+        .task-item {
+            display: flex;
+            padding: 15px;
+            border-bottom: 1px solid #ddd;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .task-item:last-child {
+            border-bottom: none;
+        }
+
+        .task-created-time {
+            min-width: 180px;
+            font-family: monospace;
+            color: #666;
+        }
+
+        .task-description {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        .task-time {
+            min-width: 150px;
+            text-align: center;
+            font-family: monospace;
+            font-size: 1.1em;
+        }
+
+        .task-controls button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 5px;
+            transition: background-color 0.3s;
+        }
+
+        .start-btn {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .pause-btn {
+            background-color: #ff9800;
+            color: white;
+        }
+
+        .stop-btn {
+            background-color: #f44336;
+            color: white;
+        }
+
+        .delete-btn {
+            background-color: #9e9e9e;
+            color: white;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .running {
+            background-color: #e8f5e9;
+        }
+
+        .paused {
+            background-color: #fff3e0;
+        }
+
+        .completed {
+            background-color: #ffebee;
+        }
+
+        .carried-over {
+            position: relative;
+        }
+
+        .carried-over::before {
+            content: "续";
+            position: absolute;
+            left: -5px;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: #ff9800;
+            color: white;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>日计划记录工具</h1>
+        
+        <div class="controls">
+            <div class="control-buttons">
+                <button class="add-task" id="addTaskBtn">添加新任务</button>
+                <button class="export-tasks" id="exportTasksBtn">导出记录</button>
+            </div>
+            <div class="total-time">总计时间：<span id="totalTime">0小时0分钟0秒</span></div>
+        </div>
+
+        <div id="dayGroups">
+            <!-- Day groups will be added here dynamically -->
+        </div>
+    </div>
+
+    <script>
+        class Task {
+            constructor(id, description = '', createdTime = new Date()) {
+                this.id = id;
+                this.description = description;
+                this.createdTime = createdTime;
+                this.status = 'idle'; // idle, running, paused, completed
+                this.totalTime = 0; // in seconds
+                this.startTime = null;
+                this.intervals = [];
+                this.carriedOver = false;
+            }
+        }
+
+        class TaskManager {
+            constructor() {
+                this.tasks = new Map();
+                this.nextId = 1;
+                this.timer = null;
+                this.currentDate = new Date().toLocaleDateString();
+
+                this.init();
+                this.loadTasks();
+                this.startTimer();
+                this.checkForNewDay();
+            }
+
+            init() {
+                document.getElementById('addTaskBtn').addEventListener('click', () => this.addTask());
+                document.getElementById('exportTasksBtn').addEventListener('click', () => this.exportTasks());
+                this.renderTasks();
+            }
+
+            startTimer() {
+                this.timer = setInterval(() => {
+                    this.updateAllTasks();
+                    this.checkForNewDay();
+                }, 1000);
+            }
+
+            checkForNewDay() {
+                const newDate = new Date().toLocaleDateString();
+                if (this.currentDate !== newDate) {
+                    this.currentDate = newDate;
+                    this.handleDayChange();
+                }
+            }
+
+            handleDayChange() {
+                this.tasks.forEach(task => {
+                    if (task.status !== 'completed') {
+                        const newTask = new Task(this.nextId++, task.description);
+                        newTask.carriedOver = true;
+                        this.tasks.set(newTask.id, newTask);
+                    }
+                });
+                this.renderTasks();
+                this.saveTasks();
+            }
+
+            updateAllTasks() {
+                let totalSeconds = 0;
+                this.tasks.forEach(task => {
+                    if (task.status === 'running' && task.startTime) {
+                        const elapsed = Math.floor((Date.now() - task.startTime) / 1000);
+                        task.totalTime = task.intervals.reduce((acc, interval) => acc + interval.duration, 0) + elapsed;
+                    }
+                    totalSeconds += task.totalTime;
+                });
+                this.updateTotalTime(totalSeconds);
+                this.renderTasks();
+            }
+
+            updateTotalTime(totalSeconds) {
+                const hours = Math.floor(totalSeconds / 3600);
+                const minutes = Math.floor((totalSeconds % 3600) / 60);
+                const seconds = totalSeconds % 60;
+                document.getElementById('totalTime').textContent = 
+                    `${hours}小时${minutes}分钟${seconds}秒`;
+            }
+
+            formatTime(seconds) {
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                const secs = seconds % 60;
+                return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            }
+
+            formatDateTime(date) {
+                const d = new Date(date);
+                const year = d.getFullYear();
+                const month = (d.getMonth() + 1).toString().padStart(2, '0');
+                const day = d.getDate().toString().padStart(2, '0');
+                const hours = d.getHours().toString().padStart(2, '0');
+                const minutes = d.getMinutes().toString().padStart(2, '0');
+                const seconds = d.getSeconds().toString().padStart(2, '0');
+                return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+            }
+
+            formatDate(date) {
+                const d = new Date(date);
+                const year = d.getFullYear();
+                const month = (d.getMonth() + 1).toString().padStart(2, '0');
+                const day = d.getDate().toString().padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+
+            addTask() {
+                const task = new Task(this.nextId++);
+                this.tasks.set(task.id, task);
+                this.renderTasks();
+                this.saveTasks();
+            }
+
+            startTask(id) {
+                const task = this.tasks.get(id);
+                if (task) {
+                    task.status = 'running';
+                    task.startTime = Date.now();
+                    this.renderTasks();
+                    this.saveTasks();
+                }
+            }
+
+            pauseTask(id) {
+                const task = this.tasks.get(id);
+                if (task && task.status === 'running') {
+                    const duration = Math.floor((Date.now() - task.startTime) / 1000);
+                    task.intervals.push({
+                        start: task.startTime,
+                        end: Date.now(),
+                        duration: duration
+                    });
+                    task.status = 'paused';
+                    task.startTime = null;
+                    this.renderTasks();
+                    this.saveTasks();
+                }
+            }
+
+            stopTask(id) {
+                const task = this.tasks.get(id);
+                if (task && task.status === 'running') {
+                    this.pauseTask(id);
+                }
+                task.status = 'completed';
+                this.renderTasks();
+                this.saveTasks();
+            }
+
+            deleteTask(id) {
+                this.tasks.delete(id);
+                this.renderTasks();
+                this.saveTasks();
+            }
+
+            updateTaskDescription(id, description) {
+                const task = this.tasks.get(id);
+                if (task) {
+                    task.description = description;
+                    this.saveTasks();
+                }
+            }
+
+            createTaskElement(task) {
+                const taskElement = document.createElement('div');
+                taskElement.className = `task-item ${task.status} ${task.carriedOver ? 'carried-over' : ''}`;
+                taskElement.innerHTML = `
+                    <div class="task-created-time">${this.formatDateTime(task.createdTime)}</div>
+                    <input type="text" class="task-description" value="${task.description}" 
+                           placeholder="输入任务描述..." data-id="${task.id}">
+                    <div class="task-time">${this.formatTime(task.totalTime)}</div>
+                    <div class="task-controls">
+                        <button class="start-btn" ${task.status === 'running' || task.status === 'completed' ? 'disabled' : ''}>
+                            开始
+                        </button>
+                        <button class="pause-btn" ${task.status !== 'running' ? 'disabled' : ''}>
+                            暂停
+                        </button>
+                        <button class="stop-btn" ${task.status === 'completed' ? 'disabled' : ''}>
+                            结束
+                        </button>
+                        <button class="delete-btn">删除</button>
+                    </div>
+                `;
+
+                // Add event listeners
+                const description = taskElement.querySelector('.task-description');
+                description.addEventListener('change', (e) => {
+                    this.updateTaskDescription(task.id, e.target.value);
+                });
+
+                const startBtn = taskElement.querySelector('.start-btn');
+                startBtn.addEventListener('click', () => this.startTask(task.id));
+
+                const pauseBtn = taskElement.querySelector('.pause-btn');
+                pauseBtn.addEventListener('click', () => this.pauseTask(task.id));
+
+                const stopBtn = taskElement.querySelector('.stop-btn');
+                stopBtn.addEventListener('click', () => this.stopTask(task.id));
+
+                const deleteBtn = taskElement.querySelector('.delete-btn');
+                deleteBtn.addEventListener('click', () => this.deleteTask(task.id));
+
+                return taskElement;
+            }
+
+            groupTasksByDay() {
+                const groups = new Map();
+                
+                this.tasks.forEach(task => {
+                    const date = this.formatDate(task.createdTime);
+                    if (!groups.has(date)) {
+                        groups.set(date, {
+                            tasks: [],
+                            totalTime: 0
+                        });
+                    }
+                    const group = groups.get(date);
+                    group.tasks.push(task);
+                    group.totalTime += task.totalTime;
+                });
+
+                return new Map([...groups.entries()].sort().reverse());
+            }
+
+            renderTasks() {
+                const dayGroups = document.getElementById('dayGroups');
+                dayGroups.innerHTML = '';
+
+                const groups = this.groupTasksByDay();
+                
+                groups.forEach((group, date) => {
+                    const dayGroup = document.createElement('div');
+                    dayGroup.className = 'day-group';
+                    
+                    const header = document.createElement('div');
+                    header.className = 'day-header';
+                    header.innerHTML = `
+                        <div>${date}</div>
+                        <div class="day-total-time">总计：${this.formatTime(group.totalTime)}</div>
+                    `;
+                    
+                    const taskList = document.createElement('div');
+                    taskList.className = 'task-list';
+                    
+                    group.tasks.forEach(task => {
+                        taskList.appendChild(this.createTaskElement(task));
+                    });
+                    
+                    dayGroup.appendChild(header);
+                    dayGroup.appendChild(taskList);
+                    dayGroups.appendChild(dayGroup);
+                });
+            }
+
+            exportTasks() {
+                const tasksData = Array.from(this.tasks.values()).map(task => ({
+                    创建时间: this.formatDateTime(task.createdTime),
+                    任务描述: task.description,
+                    状态: this.getStatusText(task.status),
+                    总计时间: this.formatTime(task.totalTime),
+                    是否续期: task.carriedOver ? '是' : '否'
+                }));
+
+                const csv = this.convertToCSV(tasksData);
+                const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const now = new Date();
+                const filename = `任务记录_${this.formatDateTime(now).replace(/[: ]/g, '_')}.csv`;
+                
+                if (navigator.msSaveBlob) {
+                    navigator.msSaveBlob(blob, filename);
+                } else {
+                    link.href = window.URL.createObjectURL(blob);
+                    link.download = filename;
+                    link.click();
+                }
+            }
+
+            getStatusText(status) {
+                const statusMap = {
+                    'idle': '未开始',
+                    'running': '进行中',
+                    'paused': '已暂停',
+                    'completed': '已完成'
+                };
+                return statusMap[status] || status;
+            }
+
+            convertToCSV(objArray) {
+                const array = typeof objArray !== 'object' ? JSON.parse(objArray) : objArray;
+                let str = Object.keys(array[0]).join(',') + '\r\n';
+
+                for (let i = 0; i < array.length; i++) {
+                    let line = '';
+                    for (let index in array[i]) {
+                        if (line !== '') line += ',';
+                        line += array[i][index];
+                    }
+                    str += line + '\r\n';
+                }
+                return str;
+            }
+
+            saveTasks() {
+                const tasksData = Array.from(this.tasks.entries()).map(([id, task]) => ({
+                    id,
+                    description: task.description,
+                    createdTime: task.createdTime,
+                    status: task.status,
+                    totalTime: task.totalTime,
+                    intervals: task.intervals,
+                    carriedOver: task.carriedOver
+                }));
+                localStorage.setItem('tasks', JSON.stringify(tasksData));
+            }
+
+            loadTasks() {
+                const tasksData = JSON.parse(localStorage.getItem('tasks')) || [];
+                this.nextId = 1;
+                tasksData.forEach(taskData => {
+                    const task = new Task(taskData.id, taskData.description, new Date(taskData.createdTime));
+                    task.status = taskData.status;
+                    task.totalTime = taskData.totalTime;
+                    task.intervals = taskData.intervals || [];
+                    task.carriedOver = taskData.carriedOver || false;
+                    this.tasks.set(task.id, task);
+                    this.nextId = Math.max(this.nextId, task.id + 1);
+                });
+            }
+        }
+
+        // 初始化任务管理器
+        const taskManager = new TaskManager();
+    </script>
+</body>
+</html>
